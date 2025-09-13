@@ -1,0 +1,4 @@
+pipecat-ai[deepgram,cartesia,groq,local]
+python-dotenv
+gradio
+pyinstaller
