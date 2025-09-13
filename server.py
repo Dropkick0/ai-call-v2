@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
+from pipecat.processors.filters.stt_mute_filter import STTMuteConfig, STTMuteFilter, STTMuteStrategy
 from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.groq.llm import GroqLLMService
@@ -18,6 +19,10 @@ from script_gate import ScriptGate
 
 load_dotenv()
 
+GATEKEEPER_CONTENT_PACK: str = (
+    """**REPLY ≤ 20 words. Two sentences max. No filler or meta.** ... (your full text) ..."""
+)
+
 # ---------------------------------------------------------------------------
 # Model and service initialization
 # ---------------------------------------------------------------------------
@@ -25,6 +30,17 @@ load_dotenv()
 llm = GroqLLMService(
     api_key=os.getenv("GROQ_API_KEY"),
     model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+    system_message=(
+        GATEKEEPER_CONTENT_PACK
+        + "\n\nReturn ONLY a single JSON object: "
+          '{"say":"<the exact line to speak, ≤20 words>", "next_state":"<state id or empty>"} '
+          "No markdown, no code fences, no extra text."
+    ),
+    params=GroqLLMService.InputParams(
+        temperature=0.01,
+        top_p=0.0,
+        extra={"response_format": {"type": "json_object"}},
+    ),
 )
 
 stt = DeepgramSTTService(
@@ -58,8 +74,13 @@ def set_next_state(ns: str) -> None:
 
 script_gate = ScriptGate(get_required_line=required_line, on_next_state=set_next_state, strict=True)
 
+stt_mute = STTMuteFilter(
+    config=STTMuteConfig(strategies={STTMuteStrategy.ALWAYS})
+)
+
 pipeline = Pipeline([
     transport.input(),
+    stt_mute,
     stt,
     llm,
     script_gate,
@@ -74,7 +95,11 @@ pipeline = Pipeline([
 async def _run_pipeline():
     task = PipelineTask(
         pipeline,
-        params=PipelineParams(allow_interruptions=True),
+        params=PipelineParams(
+            allow_interruptions=True,
+            audio_in_sample_rate=16000,
+            audio_out_sample_rate=48000,
+        ),
     )
     runner = PipelineRunner()
     await runner.run(task)

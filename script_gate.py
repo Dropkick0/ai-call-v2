@@ -35,7 +35,9 @@ class ScriptGate(FrameProcessor):
         say = ""
         next_state = ""
         try:
-            data = json.loads(raw)
+
+            data = self._extract_json(raw)
+
             say = (data.get("say") or "").strip()
             next_state = (data.get("next_state") or "").strip()
         except Exception:
@@ -43,9 +45,32 @@ class ScriptGate(FrameProcessor):
 
         required = (self._get_required_line() or "").strip()
         if self._strict:
-            if not say or say.lower() != required.lower():
+            if not say or self._looks_meta(say) or self._norm(say) != self._norm(required):
                 say = required
         else:
-            if not say:
+            if not say or self._looks_meta(say):
                 say = required
         return say, next_state
+
+    def _norm(self, s: str) -> str:
+        return " ".join(
+            s.replace("—", "-").replace("–", "-")
+             .replace("’", "'").replace("“", '"').replace("”", '"')
+             .split()
+        ).lower()
+
+    def _looks_meta(self, s: str) -> bool:
+        sl = s.lower()
+        return any(k in sl for k in ["option a", "option b", "say:", "meta:", "placeholder", "greeting +"])
+
+    def _extract_json(self, raw: str) -> dict:
+        s = raw.strip()
+        if s.startswith("```"):
+            s = s.strip("`")
+            if s.lower().startswith("json"):
+                s = s[4:].lstrip()
+        lo, hi = s.find("{"), s.rfind("}")
+        if lo != -1 and hi != -1 and hi > lo:
+            s = s[lo:hi + 1]
+        return json.loads(s)
+
