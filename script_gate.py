@@ -35,7 +35,9 @@ class ScriptGate(FrameProcessor):
         say = ""
         next_state = ""
         try:
+
             data = self._extract_json(raw)
+
             say = (data.get("say") or "").strip()
             next_state = (data.get("next_state") or "").strip()
         except Exception:
@@ -71,3 +73,4 @@ class ScriptGate(FrameProcessor):
         if lo != -1 and hi != -1 and hi > lo:
             s = s[lo:hi + 1]
         return json.loads(s)
+
