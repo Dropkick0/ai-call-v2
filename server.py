@@ -6,14 +6,28 @@ import webbrowser
 
 import gradio as gr
 from dotenv import load_dotenv
+
+from pipecat.frames.frames import BotStoppedSpeakingFrame, StartFrame, TTSSpeakFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
-from pipecat.processors.filters.stt_mute_filter import STTMuteConfig, STTMuteFilter, STTMuteStrategy
+from pipecat.processors.filters.stt_mute_filter import (
+    STTMuteConfig,
+    STTMuteFilter,
+    STTMuteStrategy,
+)
 from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.groq.llm import GroqLLMService
-from pipecat.transports.local.audio import LocalAudioTransport, LocalAudioTransportParams
+from pipecat.transports.null.audio import NullAudioTransport
+try:  # optional local audio, may require PyAudio
+    from pipecat.transports.local.audio import (
+        LocalAudioTransport,
+        LocalAudioTransportParams,
+    )
+except Exception:  # pragma: no cover - missing optional deps
+    LocalAudioTransport = LocalAudioTransportParams = None
+
 
 from script_gate import ScriptGate
 
@@ -52,7 +66,20 @@ tts = CartesiaTTSService(
     voice_id=os.getenv("CARTESIA_VOICE_ID"),
 )
 
-transport = LocalAudioTransport(LocalAudioTransportParams())
+HEADLESS = os.getenv("NO_AUDIO", "").lower() in ("1", "true", "yes")
+
+if HEADLESS:
+    transport = NullAudioTransport()
+else:
+    transport = LocalAudioTransport(
+        LocalAudioTransportParams(
+            audio_in_enabled=True,
+            audio_out_enabled=True,
+            input_device_index=int(os.getenv("AUDIO_IN_DEVICE_INDEX", "-1")),
+            output_device_index=int(os.getenv("AUDIO_OUT_DEVICE_INDEX", "-1")),
+        )
+    )
+
 
 # ---------------------------------------------------------------------------
 # Script gating
@@ -75,13 +102,17 @@ def set_next_state(ns: str) -> None:
 script_gate = ScriptGate(get_required_line=required_line, on_next_state=set_next_state, strict=True)
 
 stt_mute = STTMuteFilter(
-    config=STTMuteConfig(strategies={STTMuteStrategy.ALWAYS})
+
+    config=STTMuteConfig(strategies={STTMuteStrategy.ON_BOT_SPEAKING})
+
 )
 
 pipeline = Pipeline([
     transport.input(),
-    stt_mute,
+
     stt,
+    stt_mute,
+
     llm,
     script_gate,
     tts,
@@ -101,7 +132,17 @@ async def _run_pipeline():
             audio_out_sample_rate=48000,
         ),
     )
+
+
+    @task.event_handler("on_frame")
+    async def _on_frame(frame):
+        if isinstance(frame, BotStoppedSpeakingFrame):
+            script_gate.release_next_state()
+
     runner = PipelineRunner()
+    await task.queue_frame(StartFrame(allow_interruptions=True))
+    await task.queue_frame(TTSSpeakFrame(required_line()))
+
     await runner.run(task)
 
 def start_conversation():

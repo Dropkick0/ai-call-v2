@@ -13,6 +13,9 @@ class ScriptGate(FrameProcessor):
         self._on_next_state = on_next_state or (lambda ns: None)
         self._strict = strict
 
+        self._pending_next_state: str | None = None
+
+
     async def process_frame(self, frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
 
@@ -24,9 +27,10 @@ class ScriptGate(FrameProcessor):
             raw = "".join(self._buf).strip()
             self._buf = []
             say, next_state = self._validate_or_fallback(raw)
+
+            self._pending_next_state = next_state or None
             await self.push_frame(TTSSpeakFrame(say), FrameDirection.DOWNSTREAM)
-            if next_state:
-                self._on_next_state(next_state)
+
             return
 
         await self.push_frame(frame, direction)
@@ -46,6 +50,10 @@ class ScriptGate(FrameProcessor):
         required = (self._get_required_line() or "").strip()
         if self._strict:
             if not say or self._looks_meta(say) or self._norm(say) != self._norm(required):
+
+                if say and self._norm(say) != self._norm(required):
+                    print(f"\U0001F6E1\uFE0F Replaced off-script: {say!r} -> {required!r}")
+
                 say = required
         else:
             if not say or self._looks_meta(say):
@@ -61,7 +69,25 @@ class ScriptGate(FrameProcessor):
 
     def _looks_meta(self, s: str) -> bool:
         sl = s.lower()
-        return any(k in sl for k in ["option a", "option b", "say:", "meta:", "placeholder", "greeting +"])
+
+        return any(
+            k in sl
+            for k in [
+                "option a",
+                "option b",
+                "say:",
+                "meta:",
+                "placeholder",
+                "greeting +",
+                "internal note",
+            ]
+        )
+
+    def release_next_state(self):
+        if self._pending_next_state:
+            self._on_next_state(self._pending_next_state)
+            self._pending_next_state = None
+
 
     def _extract_json(self, raw: str) -> dict:
         s = raw.strip()
