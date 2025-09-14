@@ -12,6 +12,7 @@ pyinstaller ^
   --hidden-import pipecat.processors.filters.stt_mute_filter ^
   --hidden-import pipecat.transports.local.audio ^
   --collect-data pipecat ^
+
   server.py
 
 echo Built dist\%NAME%.exe

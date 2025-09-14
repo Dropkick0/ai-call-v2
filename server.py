@@ -6,6 +6,7 @@ import webbrowser
 
 import gradio as gr
 from dotenv import load_dotenv
+
 from pipecat.frames.frames import BotStoppedSpeakingFrame, StartFrame, TTSSpeakFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
@@ -26,6 +27,7 @@ try:  # optional local audio, may require PyAudio
     )
 except Exception:  # pragma: no cover - missing optional deps
     LocalAudioTransport = LocalAudioTransportParams = None
+
 
 from script_gate import ScriptGate
 
@@ -63,6 +65,7 @@ tts = CartesiaTTSService(
     api_key=os.getenv("CARTESIA_API_KEY"),
     voice_id=os.getenv("CARTESIA_VOICE_ID"),
 )
+
 HEADLESS = os.getenv("NO_AUDIO", "").lower() in ("1", "true", "yes")
 
 if HEADLESS:
@@ -76,6 +79,7 @@ else:
             output_device_index=int(os.getenv("AUDIO_OUT_DEVICE_INDEX", "-1")),
         )
     )
+
 
 # ---------------------------------------------------------------------------
 # Script gating
@@ -98,13 +102,17 @@ def set_next_state(ns: str) -> None:
 script_gate = ScriptGate(get_required_line=required_line, on_next_state=set_next_state, strict=True)
 
 stt_mute = STTMuteFilter(
+
     config=STTMuteConfig(strategies={STTMuteStrategy.ON_BOT_SPEAKING})
+
 )
 
 pipeline = Pipeline([
     transport.input(),
+
     stt,
     stt_mute,
+
     llm,
     script_gate,
     tts,
@@ -125,6 +133,7 @@ async def _run_pipeline():
         ),
     )
 
+
     @task.event_handler("on_frame")
     async def _on_frame(frame):
         if isinstance(frame, BotStoppedSpeakingFrame):
@@ -133,6 +142,7 @@ async def _run_pipeline():
     runner = PipelineRunner()
     await task.queue_frame(StartFrame(allow_interruptions=True))
     await task.queue_frame(TTSSpeakFrame(required_line()))
+
     await runner.run(task)
 
 def start_conversation():
