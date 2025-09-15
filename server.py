@@ -73,6 +73,7 @@ GATEKEEPER_CONTENT_PACK: str = (
 
 llm = GroqLLMService(
     api_key=os.getenv("GROQ_API_KEY"),
+    base_url=os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1"),
     model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
     system_message=(
         GATEKEEPER_CONTENT_PACK
